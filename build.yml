@@ -1,0 +1,30 @@
+# Builds the APK on GitHub's servers every time files are uploaded.
+# Download it from: Actions tab > latest run > Artifacts > UltrasonicRX-apk
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest   # comes with the Android SDK pre-installed
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build APK
+        run: |
+          # works whether the files are in the repo root or inside a UltrasonicRX/ folder
+          cd "$(dirname "$(find . -maxdepth 2 -name gradlew | head -1)")"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UltrasonicRX-apk
+          path: '**/app/build/outputs/apk/debug/app-debug.apk'
