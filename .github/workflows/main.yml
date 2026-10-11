@@ -1,27 +1,77 @@
 name: Build APK
-
+ 
 on:
   push:
   workflow_dispatch:
-
+ 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+ 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-
-      - name: Build APK
+ 
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+ 
+      - name: Rebuild project structure
         run: |
-          cd "$(dirname "$(find . -maxdepth 2 -name gradlew | head -1)")"
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-
+          # Works even if all files were uploaded flat (without folders)
+          P=apkproject
+          mkdir -p $P/app/src/main/java/com/brwa/ultrasonic $P/app/src/main/assets
+          pick() { find . -path ./$P -prune -o -type f -name "$1" -print | head -1; }
+          for f in MainActivity.java AndroidManifest.xml index.html; do
+            [ -n "$(pick $f)" ] || { echo "::error::$f is missing from the repository"; exit 1; }
+          done
+          cp "$(pick MainActivity.java)"  $P/app/src/main/java/com/brwa/ultrasonic/
+          cp "$(pick AndroidManifest.xml)" $P/app/src/main/
+          cp "$(pick index.html)"          $P/app/src/main/assets/
+ 
+          cat > $P/settings.gradle <<'G'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "UltrasonicRX"
+          include ':app'
+          G
+          cat > $P/build.gradle <<'G'
+          plugins { id 'com.android.application' version '8.7.3' apply false }
+          G
+          cat > $P/gradle.properties <<'G'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m
+          G
+          cat > $P/app/build.gradle <<'G'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.brwa.ultrasonic'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.brwa.ultrasonic'
+                  minSdk 24
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
+          G
+          find $P -type f
+ 
+      - name: Build APK
+        working-directory: apkproject
+        run: gradle assembleDebug --no-daemon
+ 
       - uses: actions/upload-artifact@v4
         with:
           name: UltrasonicRX-apk
-          path: '**/app/build/outputs/apk/debug/app-debug.apk'
+          path: apkproject/app/build/outputs/apk/debug/app-debug.apk
+ 
